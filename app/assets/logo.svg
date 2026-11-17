@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e3b56"/><stop offset="1" stop-color="#172033"/></linearGradient></defs>
+<rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+<rect x="147.0" y="333.0" width="330" height="222" rx="29.0" fill="#1f2a42" stroke="#8ab1ed" stroke-width="30"/>
+<rect x="290.0" y="570" width="44" height="70" fill="#8ab1ed"/>
+<rect x="228.0" y="640" width="168" height="30" rx="15" fill="#8ab1ed"/>
+<text x="312.0" y="444.0" fill="#f1f1f1" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="176" text-anchor="middle" dominant-baseline="central">1</text>
+<rect x="547.0" y="333.0" width="330" height="222" rx="29.0" fill="#4990ff" stroke="#4990ff" stroke-width="30"/>
+<rect x="690.0" y="570" width="44" height="70" fill="#4990ff"/>
+<rect x="628.0" y="640" width="168" height="30" rx="15" fill="#4990ff"/>
+<text x="712.0" y="444.0" fill="#f1f1f1" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="176" text-anchor="middle" dominant-baseline="central">2</text>
+</svg>

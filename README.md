@@ -1,3 +1,5 @@
+<p align="center"><img src="app/assets/logo.png" width="160" alt="Legion Monitor Control Center logo"></p>
+
 # Legion Monitor Control Center
 
 Monitor control center for Windows that **tells identical monitors apart**.

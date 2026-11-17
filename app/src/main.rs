@@ -728,7 +728,10 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Monitor Control Center")
         .with_inner_size([1100.0, 720.0])
-        .with_min_inner_size([900.0, 560.0]);
+        .with_min_inner_size([900.0, 560.0])
+        .with_icon(std::sync::Arc::new(
+            eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-256.png")).expect("valid icon png"),
+        ));
     if shot.is_some() {
         viewport = viewport.with_active(false);
         #[cfg(windows)]
