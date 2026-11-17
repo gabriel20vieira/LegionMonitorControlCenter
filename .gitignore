@@ -1,0 +1,26 @@
+# Rust build output
+/app/target/
+**/*.rs.bk
+*.pdb
+
+# Reverse-engineering workspace (proprietary Lenovo binaries, decompiled code) - never publish
+/checks/
+/capture/
+/reference/
+/investigation.cany/
+/inbox/
+
+# Agent/tool session artifacts (may contain account identifiers)
+agent-session.jsonl
+build-activity.log
+craft.json
+feed.json
+usage.json
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store

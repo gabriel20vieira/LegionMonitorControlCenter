@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "values": [
+    {"name": "monitor identity", "group": "identification", "value": "device interface path (PnP instance id) + Windows display number", "source": "fix for MONITORCONTROL.dll 0x10002d80 / 0x10001820 which use list position and first registry key"},
+    {"name": "original monitor record size", "group": "identification", "value": 6896, "unit": "bytes", "source": "function 0x10003ce0 (index * 0x1af0)"},
+    {"name": "original EDID lookup", "group": "identification", "value": "HKLM\\SYSTEM\\CurrentControlSet\\Enum\\DISPLAY key index 0", "source": "function 0x10001820"},
+    {"name": "original monitor switch call", "group": "identification", "value": "ChangeCurDisplayMonitorIndex {index}", "source": "app.fabd9a3ca68fcfa35fcd.js currentMonitorChange"},
+    {"name": "brightness VCP", "group": "ddc", "value": 16, "source": "VCPCodeDef.json 0x10"},
+    {"name": "brightness max", "group": "ddc", "value": 100, "source": "VCPCodeDef.json 0x10 max 0x64"},
+    {"name": "contrast VCP", "group": "ddc", "value": 18, "source": "VCPCodeDef.json 0x12"},
+    {"name": "color preset VCP", "group": "ddc", "value": 20, "source": "VCPCodeDef.json 0x14"},
+    {"name": "red gain VCP", "group": "ddc", "value": 22, "source": "VCPCodeDef.json 0x16"},
+    {"name": "green gain VCP", "group": "ddc", "value": 24, "source": "VCPCodeDef.json 0x18"},
+    {"name": "blue gain VCP", "group": "ddc", "value": 26, "source": "VCPCodeDef.json 0x1A"},
+    {"name": "input source VCP", "group": "ddc", "value": 96, "source": "VCPCodeDef.json 0x60"},
+    {"name": "display scaling VCP", "group": "ddc", "value": 134, "source": "VCPCodeDef.json 0x86"},
+    {"name": "scenario mode VCP", "group": "ddc", "value": 220, "source": "VCPCodeDef.json 0xDC"},
+    {"name": "power mode VCP", "group": "ddc", "value": 214, "source": "VCPCodeDef.json 0xD6"},
+    {"name": "over drive VCP", "group": "ddc", "value": 224, "source": "VCPCodeDef.json 0xE0"},
+    {"name": "dynamic contrast VCP", "group": "ddc", "value": 234, "source": "VCPCodeDef.json 0xEA"},
+    {"name": "HDR VCP", "group": "ddc", "value": 239, "source": "VCPCodeDef.json 0xEF"},
+    {"name": "game mode VCP", "group": "ddc", "value": 249, "source": "VCPCodeDef.json 0xF9"},
+    {"name": "restore factory VCP", "group": "ddc", "value": 4, "source": "VCPCodeDef.json 0x04"},
+    {"name": "resolution change", "group": "display", "value": "ChangeDisplaySettingsExW per \\\\.\\DISPLAYn", "source": "MONITORCONTROL.dll _MC_SetMonitorResolution@12 0x10004ad0"},
+    {"name": "rotation change", "group": "display", "value": "dmDisplayOrientation 0-3", "source": "MONITORCONTROL.dll _MC_SetMonitorOrientation@8 0x10004d60"},
+    {"name": "background colour", "group": "look", "value": "#1f2a42", "source": "static/style/artery/common.css"},
+    {"name": "accent colour", "group": "look", "value": "#4990ff", "source": "static/style/artery/common.css"},
+    {"name": "identify overlay time", "group": "controls", "value": 2500, "unit": "ms", "estimated": true}
+  ]
+}
