@@ -316,14 +316,14 @@ impl App {
             for m in &list {
                 let selected = self.selected.as_deref() == Some(m.key.as_str());
                 let fill = if selected { Color32::from_rgb(0x37, 0x59, 0x94) } else { CARD };
-                let resp = egui::Frame::default()
+                egui::Frame::default()
                     .fill(fill)
                     .stroke(Stroke::new(1.0_f32, if selected { ACCENT } else { PANEL }))
                     .corner_radius(6.0)
                     .inner_margin(egui::Margin::same(10))
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        ui.horizontal(|ui| {
+                        let header = ui.horizontal(|ui| {
                             badge(ui, m.win_number, 34.0, if selected { ACCENT } else { PANEL });
                             ui.vertical(|ui| {
                                 let lbl = self.label(m);
@@ -343,18 +343,20 @@ impl App {
                                 });
                             });
                         });
+                        // Only the header selects the monitor, so the "follow" checkbox below keeps its own clicks.
+                        let pick = ui
+                            .interact(header.response.rect, ui.id().with(("pick", &m.key)), Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if pick.clicked() {
+                            clicked = Some(m.key.clone());
+                        }
                         if !selected && m.ddc && self.selected.is_some() {
                             let mut on = self.store.sync.contains(&m.key);
                             if ui.checkbox(&mut on, RichText::new("Seguir alterações do selecionado").size(12.0)).changed() {
                                 toggled = Some(m.key.clone());
                             }
                         }
-                    })
-                    .response
-                    .interact(Sense::click());
-                if resp.clicked() {
-                    clicked = Some(m.key.clone());
-                }
+                    });
                 ui.add_space(4.0);
             }
         });
