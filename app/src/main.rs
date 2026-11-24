@@ -80,6 +80,11 @@ struct App {
     all_brightness: Option<u32>,
     profile_edit: Option<String>,
     active_profile: Option<String>,
+    layout_edit: Option<String>,
+    active_layout: Option<String>,
+    /// Next scan result should not overwrite the status line.
+    keep_status: bool,
+    scanned_once: bool,
     keep: Option<KeepMode>,
     updates: Option<Receiver<update::Event>>,
     update_ready: Option<(String, PathBuf)>,
@@ -124,6 +129,10 @@ impl App {
             all_brightness: None,
             profile_edit: None,
             active_profile: None,
+            layout_edit: None,
+            active_layout: None,
+            keep_status: false,
+            scanned_once: false,
             keep: None,
             updates,
             update_ready: None,
@@ -220,13 +229,26 @@ impl App {
                     self.values.retain(|k, _| keys.contains(k));
                     self.monitors = list;
                     let n = self.monitors.len();
+                    let off = self.monitors.iter().filter(|m| m.off).count();
+                    let old_status = std::mem::take(&mut self.keep_status).then(|| (self.status.clone(), self.status_bad));
                     self.status = match n {
                         0 => "Nenhum monitor encontrado.".into(),
                         1 => "1 monitor encontrado.".into(),
                         _ => format!("{n} monitores encontrados, cada um com o seu número do Windows e ID único."),
                     };
+                    if off > 0 {
+                        self.status += &format!(" {off} desligado(s).");
+                    }
                     self.status_bad = n == 0;
-                    let keep = self.selected.clone().filter(|k| keys.contains(k));
+                    if let Some((t, bad)) = old_status {
+                        self.status = t;
+                        self.status_bad = bad;
+                    }
+                    // Keep the selection, unless it is a screen that was already off at start.
+                    let keep = self.selected.clone().filter(|k| keys.contains(k)).filter(|k| {
+                        self.scanned_once || self.monitors.iter().any(|m| &m.key == k && !m.off)
+                    });
+                    self.scanned_once = true;
                     let pick = keep
                         .or_else(|| self.monitors.iter().find(|m| m.primary).map(|m| m.key.clone()))
                         .or_else(|| self.monitors.first().map(|m| m.key.clone()));
@@ -404,7 +426,7 @@ impl App {
         let items = self
             .monitors
             .iter()
-            .filter(|m| m.sub_index == 0)
+            .filter(|m| m.sub_index == 0 && !m.off)
             .map(|m| {
                 let cap = format!("{}\n{}", self.display_name(m), m.instance_short);
                 (m.rect, m.win_number.to_string(), cap, Some(&m.key) == self.selected.as_ref())
@@ -496,6 +518,9 @@ impl App {
             ui.add_space(8.0);
             self.display_map(ui);
             ui.add_space(12.0);
+            self.power_row(ui);
+            self.layouts_row(ui);
+            ui.add_space(6.0);
             self.follow_row(ui);
             self.all_brightness_row(ui);
         });
@@ -506,8 +531,12 @@ impl App {
             ui.label(RichText::new(if self.scanned { "Nenhum monitor encontrado." } else { "A procurar monitores…" }).color(MUTED));
             return;
         }
+        let on: Vec<MonitorDesc> = self.monitors.iter().filter(|m| !m.off).cloned().collect();
+        if on.is_empty() {
+            return;
+        }
         let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
-        for m in &self.monitors {
+        for m in &on {
             x0 = x0.min(m.rect.left);
             y0 = y0.min(m.rect.top);
             x1 = x1.max(m.rect.right);
@@ -522,7 +551,7 @@ impl App {
 
         let cur_ddc = self.current().is_some_and(|m| m.ddc);
         let mut clicked = None;
-        for m in &self.monitors {
+        for m in &on {
             // Physical monitors cloned on the same output share a rect: nudge them apart.
             let nudge = m.sub_index as f32 * 8.0;
             let r = egui::Rect::from_min_size(
@@ -570,12 +599,15 @@ impl App {
 
     fn follow_row(&mut self, ui: &mut egui::Ui) {
         let Some(cur) = self.current() else { return };
+        if cur.off {
+            return;
+        }
         if !cur.ddc {
             ui.label(RichText::new(format!("O ecrã {} não tem DDC/CI, por isso não há alterações para seguir.", cur.win_number)).color(MUTED));
             return;
         }
         let others: Vec<(String, u32, bool)> =
-            self.monitors.iter().filter(|m| m.key != cur.key).map(|m| (m.key.clone(), m.win_number, m.ddc)).collect();
+            self.monitors.iter().filter(|m| m.key != cur.key && !m.off).map(|m| (m.key.clone(), m.win_number, m.ddc)).collect();
         if others.is_empty() {
             return;
         }
@@ -601,6 +633,229 @@ impl App {
             self.status_bad = false;
             self.store.save();
         }
+    }
+
+    /// "Ecrãs ligados: [5] [6] [7]" - turns whole screens on and off (one switch per Windows display).
+    fn power_row(&mut self, ui: &mut egui::Ui) {
+        let screens: Vec<(String, u32, bool, bool)> = self
+            .monitors
+            .iter()
+            .filter(|m| m.sub_index == 0)
+            .map(|m| (m.key.clone(), m.win_number, !m.off, m.primary))
+            .collect();
+        if screens.len() < 2 {
+            return;
+        }
+        let mut toggled = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Ecrãs ligados:").color(MUTED));
+            for (key, n, on, primary) in &screens {
+                let text = format!("Ecrã {n}");
+                let resp = ui.add_enabled_ui(!*primary, |ui| switch_chip(ui, *on, &text)).inner;
+                let resp = if *primary {
+                    resp.on_disabled_hover_text("É o ecrã principal do Windows: não pode ser desligado aqui.")
+                } else if *on {
+                    resp.on_hover_text("Desligar: sai do ambiente de trabalho e o monitor deixa de receber imagem")
+                } else {
+                    resp.on_hover_text("Ligar: volta ao ambiente de trabalho no sítio onde estava")
+                };
+                if resp.clicked() {
+                    toggled = Some((key.clone(), !*on));
+                }
+            }
+        });
+        if let Some(t) = toggled {
+            self.set_screens(vec![t], &HashMap::new());
+            self.active_layout = None;
+        }
+    }
+
+    /// Screen layouts: which screens are on, saved under a name.
+    fn layouts_row(&mut self, ui: &mut egui::Ui) {
+        if self.monitors.iter().filter(|m| m.sub_index == 0).count() < 2 {
+            return;
+        }
+        let mut apply = None;
+        let mut delete = None;
+        let mut save = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Perfis de ecrãs:").color(MUTED));
+            for (i, l) in self.store.layouts.iter().enumerate() {
+                let on: Vec<String> = l.screens.iter().filter(|s| s.on).map(|s| self.screen_number(s).to_string()).collect();
+                let r = ui
+                    .add(egui::SelectableLabel::new(self.active_layout.as_deref() == Some(l.name.as_str()), &l.name))
+                    .on_hover_text(format!("Ligados: {}\nClique para aplicar · botão direito para apagar", on.join(", ")));
+                if r.clicked() {
+                    apply = Some(i);
+                }
+                r.context_menu(|ui| {
+                    if ui.button("Apagar perfil").clicked() {
+                        delete = Some(i);
+                        ui.close_menu();
+                    }
+                });
+            }
+            match &mut self.layout_edit {
+                Some(name) => {
+                    let r = ui.add(egui::TextEdit::singleline(name).desired_width(160.0));
+                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if ui.button("Guardar").clicked() || enter {
+                        save = Some(name.trim().to_string());
+                    }
+                    if ui.button("Cancelar").clicked() {
+                        self.layout_edit = None;
+                    }
+                }
+                None => {
+                    if ui.button("★ Guardar ecrãs").on_hover_text("Guarda que ecrãs estão ligados e onde estão").clicked() {
+                        self.layout_edit = Some(format!("Ecrãs {}", self.store.layouts.len() + 1));
+                    }
+                }
+            }
+        });
+        if let Some(i) = apply {
+            let l = self.store.layouts[i].clone();
+            let mut want = Vec::new();
+            let mut places = HashMap::new();
+            for s in &l.screens {
+                let m = self
+                    .monitors
+                    .iter()
+                    .find(|m| m.sub_index == 0 && m.key == s.key)
+                    .or_else(|| self.monitors.iter().find(|m| m.sub_index == 0 && m.gdi_name == s.gdi));
+                if let Some(m) = m {
+                    want.push((m.key.clone(), s.on));
+                    if let Some(p) = s.place {
+                        places.insert(m.key.clone(), p);
+                    }
+                }
+            }
+            if self.set_screens(want, &places) {
+                self.status = format!("Perfil de ecrãs {} aplicado.", l.name);
+            }
+            self.active_layout = Some(l.name);
+        }
+        if let Some(i) = delete {
+            let l = self.store.layouts.remove(i);
+            if self.active_layout.as_deref() == Some(l.name.as_str()) {
+                self.active_layout = None;
+            }
+            self.store.save();
+            self.status = format!("Perfil de ecrãs {} apagado.", l.name);
+            self.status_bad = false;
+        }
+        if let Some(name) = save.filter(|n| !n.is_empty()) {
+            let screens: Vec<store::LayoutScreen> = self
+                .monitors
+                .iter()
+                .filter(|m| m.sub_index == 0)
+                .map(|m| store::LayoutScreen {
+                    key: m.key.clone(),
+                    gdi: m.gdi_name.clone(),
+                    on: !m.off,
+                    place: if m.off { self.store.placements.get(&m.key).copied() } else { win::placement(&m.gdi_name) },
+                })
+                .collect();
+            let on: Vec<String> = screens.iter().filter(|s| s.on).map(|s| self.screen_number(s).to_string()).collect();
+            self.store.layouts.retain(|l| l.name != name);
+            self.store.layouts.push(store::Layout { name: name.clone(), screens });
+            self.store.save();
+            self.active_layout = Some(name.clone());
+            self.status = format!("Perfil de ecrãs {name} guardado (ligados: {}).", on.join(", "));
+            self.status_bad = false;
+            self.layout_edit = None;
+        }
+    }
+
+    fn screen_number(&self, s: &store::LayoutScreen) -> u32 {
+        self.monitors
+            .iter()
+            .find(|m| m.key == s.key)
+            .map(|m| m.win_number)
+            .unwrap_or_else(|| s.gdi.trim_start_matches(|c: char| !c.is_ascii_digit()).parse().unwrap_or(0))
+    }
+
+    /// Turns screens (by unique key) on or off. `places` overrides where a screen comes back.
+    /// Returns true when everything was applied.
+    fn set_screens(&mut self, want: Vec<(String, bool)>, places: &HashMap<String, win::Placement>) -> bool {
+        let mut changes = Vec::new();
+        let mut on_now: Vec<String> = Vec::new();
+        let mut off_now: Vec<String> = Vec::new();
+        let mut skipped: Vec<String> = Vec::new();
+        let mut stay_on: HashSet<String> =
+            self.monitors.iter().filter(|m| m.sub_index == 0 && !m.off).map(|m| m.gdi_name.clone()).collect();
+        for (key, on) in &want {
+            let Some(m) = self.monitor(key).cloned() else { continue };
+            if *on && m.off {
+                let at = places.get(key).copied().or_else(|| self.store.placements.get(key).copied());
+                changes.push(win::Power::On(m.gdi_name.clone(), at));
+                on_now.push(m.win_number.to_string());
+            } else if !*on && !m.off {
+                if m.primary {
+                    skipped.push(format!("o ecrã {} é o principal do Windows", m.win_number));
+                    continue;
+                }
+                if let Some(p) = win::placement(&m.gdi_name) {
+                    self.store.placements.insert(key.clone(), p);
+                }
+                stay_on.remove(&m.gdi_name);
+                changes.push(win::Power::Off(m.gdi_name.clone()));
+                off_now.push(m.win_number.to_string());
+            }
+        }
+        if stay_on.is_empty() && on_now.is_empty() {
+            self.status = "Tem de ficar pelo menos um ecrã ligado.".into();
+            self.status_bad = true;
+            return false;
+        }
+        if changes.is_empty() {
+            self.status = if skipped.is_empty() { "Os ecrãs já estão assim.".into() } else { format!("Nada mudou: {}.", skipped.join("; ")) };
+            self.status_bad = !skipped.is_empty();
+            return skipped.is_empty();
+        }
+        self.store.save();
+        let right_edge = self
+            .monitors
+            .iter()
+            .filter(|m| !m.off && stay_on.contains(&m.gdi_name))
+            .map(|m| m.rect.right)
+            .max()
+            .unwrap_or(0);
+        let failed = win::set_power(&changes, right_edge);
+        let mut parts = Vec::new();
+        if !off_now.is_empty() {
+            parts.push(format!("desligado(s): ecrã {}", off_now.join(", ")));
+        }
+        if !on_now.is_empty() {
+            parts.push(format!("ligado(s): ecrã {}", on_now.join(", ")));
+        }
+        let ok = failed.is_empty() && skipped.is_empty();
+        self.status = if failed.is_empty() {
+            let mut t = format!("Ecrãs {}.", parts.join("; "));
+            if !skipped.is_empty() {
+                t += &format!(" Não desliguei: {}.", skipped.join("; "));
+            }
+            t
+        } else {
+            let why: Vec<String> = failed
+                .iter()
+                .map(|(g, e)| match self.monitors.iter().find(|m| &m.gdi_name == g) {
+                    Some(m) => format!("ecrã {}: {e}", m.win_number),
+                    None => e.clone(),
+                })
+                .collect();
+            format!("O Windows não aplicou tudo ({}).", why.join("; "))
+        };
+        self.status_bad = !ok;
+        self.rescan_quiet();
+        ok
+    }
+
+    /// Scan again but keep the current status line.
+    fn rescan_quiet(&mut self) {
+        self.scanned = false;
+        self.keep_status = true;
+        let _ = self.tx.send(Cmd::Scan);
     }
 
     fn all_brightness_row(&mut self, ui: &mut egui::Ui) {
@@ -643,6 +898,21 @@ impl App {
             return;
         };
         self.header(ui, &m);
+        if m.off {
+            ui.add_space(10.0);
+            card(ui, |ui| {
+                ui.label(RichText::new("Este ecrã está desligado").strong());
+                ui.label(
+                    RichText::new("Está ligado ao computador, mas fora do ambiente de trabalho do Windows, por isso o monitor não recebe imagem.")
+                        .color(MUTED),
+                );
+                ui.add_space(4.0);
+                if ui.button(format!("Ligar ecrã {}", m.win_number)).clicked() {
+                    self.set_screens(vec![(m.key.clone(), true)], &HashMap::new());
+                }
+            });
+            return;
+        }
 
         if self.twins(&m) > 0 {
             ui.add_space(8.0);

@@ -4,11 +4,31 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
+use crate::win::Placement;
+
 /// A named set of DDC/CI values (VCP code → value) the person can apply in one click.
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
     pub values: BTreeMap<u8, u32>,
+}
+
+/// One screen in a screen layout: on or off, and where it sits when on.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct LayoutScreen {
+    /// unique key of the monitor (falls back to `gdi` when the key changed)
+    pub key: String,
+    pub gdi: String,
+    pub on: bool,
+    #[serde(default)]
+    pub place: Option<Placement>,
+}
+
+/// A named set of screens on/off, e.g. "Só o 7".
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct Layout {
+    pub name: String,
+    pub screens: Vec<LayoutScreen>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -25,6 +45,12 @@ pub struct Store {
     /// saved profiles, shared by every monitor
     #[serde(default)]
     pub profiles: Vec<Profile>,
+    /// saved screen layouts (which screens are on)
+    #[serde(default)]
+    pub layouts: Vec<Layout>,
+    /// unique key → where the screen was before it was turned off here
+    #[serde(default)]
+    pub placements: BTreeMap<String, Placement>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }

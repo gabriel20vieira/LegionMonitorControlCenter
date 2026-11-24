@@ -21,6 +21,9 @@ every DDC/CI command, resolution and rotation change to that exact monitor.
 - **Follow changes**: link other monitors so changes to the selected one also go to them
 - **Brightness of all** monitors with one slider
 - **Profiles**: save a monitor's image and game settings and apply them in one click
+- **Turn screens on and off**: take a screen off the Windows desktop (it stops getting a picture
+  and goes to standby) and bring it back where it was; the primary screen stays on
+- **Screen profiles**: save which screens are on (e.g. only screen 7) and switch in one click
 - Resolution, refresh rate and rotation per monitor, undone automatically if not confirmed
 - Per-unit EDID / serial read from each monitor's own registry instance
 - "Identificar" shows the Windows display number on each screen
@@ -59,7 +62,7 @@ Binary: `app/target/release/monitor-control-center.exe`.
 ## Releasing
 
 1. Set the new version in `app/Cargo.toml` (and run `cargo build` to update `Cargo.lock`).
-2. Commit, then push a tag with the same version: `git tag v0.2.0 && git push origin v0.2.0`.
+2. Commit, then push a tag with the same version: `git tag v0.3.0 && git push origin v0.3.0`.
 3. The [Release workflow](.github/workflows/release.yml) builds, tests and publishes the exe to
    the GitHub release. Running apps pick it up on their next check.
 

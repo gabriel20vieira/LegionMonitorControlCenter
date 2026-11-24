@@ -1,6 +1,6 @@
 [package]
 name = "monitor-control-center"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 description = "Monitor Control Center: control every monitor separately, even identical ones (Windows display number + device instance id)"
