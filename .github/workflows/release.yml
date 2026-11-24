@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Check that the tag matches Cargo.toml
+        run: |
+          version=$(grep -m1 '^version' app/Cargo.toml | cut -d'"' -f2)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "app/Cargo.toml has version $version but the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Test
+        working-directory: app
+        run: cargo test --release --locked
+
+      - name: Build
+        working-directory: app
+        run: cargo build --release --locked
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset="monitor-control-center-${GITHUB_REF_NAME}-windows-x64.exe"
+          cp app/target/release/monitor-control-center.exe "$asset"
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$asset" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$asset" --title "$GITHUB_REF_NAME" --generate-notes
+          fi

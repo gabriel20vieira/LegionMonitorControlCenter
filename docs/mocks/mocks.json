@@ -1,0 +1,40 @@
+{
+    "lang": "pt-PT",
+    "mocks": [
+        {
+            "file": "revamp-layout.html",
+            "title": "Novo layout da app",
+            "date": "2026-11-24",
+            "status": "implementada",
+            "decisions": [
+                "Lista de monitores: mapa da disposição (A) ou lista lateral (B)",
+                "Seguir alterações como ligação explícita com destino visível",
+                "Brilho e contraste sempre à mão",
+                "Detalhes técnicos recolhidos",
+                "Estado claro para monitores sem DDC/CI"
+            ],
+            "variants": [
+                "A",
+                "B"
+            ],
+            "options": {
+                "A": [
+                    "Brilho de todos",
+                    "Perfis"
+                ],
+                "B": [
+                    "Brilho de todos",
+                    "Perfis"
+                ]
+            },
+            "choice": {
+                "variant": "A",
+                "options": [
+                    "Brilho de todos",
+                    "Perfis"
+                ],
+                "source": "chat"
+            }
+        }
+    ]
+}

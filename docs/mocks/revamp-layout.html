@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Novo layout da app · Mock</title>
+<!-- mock-kit:head:start -->
+<script type="importmap">{"imports":{"vue":"https://cdn.jsdelivr.net/npm/vue@3.5.44/dist/vue.esm-browser.prod.js"}}</script>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3/dist/index.global.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@1.65.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="./_kit/theme.css">
+<style type="text/tailwindcss">
+@theme inline {
+    --color-background: #FFFFFF;
+    --color-foreground: #1F2A42;
+    --color-card: #FFFFFF;
+    --color-card-foreground: #1F2A42;
+    --color-popover: oklch(1 0 0);
+    --color-popover-foreground: oklch(0.145 0 0);
+    --color-primary: #4990FF;
+    --color-primary-foreground: #FFFFFF;
+    --color-secondary: oklch(0.97 0 0);
+    --color-secondary-foreground: oklch(0.205 0 0);
+    --color-muted: #F1F5FC;
+    --color-muted-foreground: #5B6B8A;
+    --color-accent: #E6F0FF;
+    --color-accent-foreground: #1F2A42;
+    --color-destructive: #E5484D;
+    --color-border: #DCE4F1;
+    --color-input: oklch(0.922 0 0);
+    --color-ring: oklch(0.708 0 0);
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+    --font-sans: "Segoe UI", system-ui, sans-serif;
+}
+</style>
+<!-- mock-kit:head:end -->
+<style>[v-cloak] { display: none; }</style>
+</head>
+<body class="bg-white text-slate-900 antialiased">
+<div id="app" v-cloak>
+    <mock-bar title="Novo layout da app"></mock-bar>
+    <main class="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6">
+        <mock-frame>
+            <div class="flex min-h-[640px] flex-col bg-white font-sans text-foreground">
+
+                <!-- Barra de topo -->
+                <header class="flex items-center gap-3 border-b border-border px-4 py-3 @3xl:px-6">
+                    <span class="inline-flex size-8 items-center justify-center rounded-lg bg-foreground text-[11px] font-bold text-white">
+                        <span class="text-slate-300">1</span><span class="ml-0.5 rounded-sm bg-primary px-0.5">2</span>
+                    </span>
+                    <h1 class="flex-1 truncate text-base font-semibold @3xl:text-lg">Monitor Control Center</h1>
+                    <button type="button" class="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm hover:bg-muted" @click="identify">
+                        <mock-icon name="scan-eye" :size="16"></mock-icon><span class="hidden @xl:inline">Identificar</span>
+                    </button>
+                    <button type="button" class="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm hover:bg-muted" @click="rescan">
+                        <mock-icon name="refresh-cw" :size="16" :class="state.scanning ? 'animate-spin' : ''"></mock-icon><span class="hidden @xl:inline">Procurar monitores</span>
+                    </button>
+                </header>
+
+                <div class="flex flex-1 flex-col" :class="mock.variant === 'B' ? '@3xl:flex-row' : ''">
+
+                    <!-- Variante A: mapa da disposição no topo -->
+                    <mock-variant name="A">
+                        <section class="border-b border-border bg-muted/60 px-4 py-4 @3xl:px-6">
+                            <div class="mb-3 flex items-center justify-between">
+                                <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Os seus ecrãs</h2>
+                                <span class="text-xs text-muted-foreground">Clique num ecrã para o escolher</span>
+                            </div>
+                            <display-map :monitors="mapList" :selected="state.selected" :following="current.ddc ? state.follow : []" :height="140" @select="select"></display-map>
+                            <p v-if="!current.ddc" class="mt-4 text-xs text-muted-foreground">O ecrã {{ current.number }} não tem DDC/CI, por isso não há alterações para seguir.</p>
+                            <div v-else class="mt-4 flex flex-wrap items-center gap-2">
+                                <span class="text-xs text-muted-foreground">Seguem as alterações do ecrã {{ current.number }}:</span>
+                                <template v-for="m in others" :key="m.key">
+                                    <follow-switch :on="state.follow.includes(m.key)" :disabled="!m.ddc" :label="'Ecrã ' + m.number + (m.ddc ? '' : ' (sem DDC/CI)')" @toggle="toggleFollow(m.key)"></follow-switch>
+                                </template>
+                            </div>
+                            <mock-option name="Brilho de todos">
+                                <div class="mt-4 flex items-center gap-3 rounded-lg border border-border bg-white px-3 py-2">
+                                    <mock-icon name="sun" :size="16" class="text-muted-foreground"></mock-icon>
+                                    <span class="w-28 shrink-0 text-sm font-medium @xl:w-36">Brilho de todos</span>
+                                    <input type="range" min="0" max="100" :value="state.allBrightness" class="h-2 flex-1 accent-primary" @input="setAll(Number($event.target.value))">
+                                    <span class="w-10 text-right text-sm tabular-nums text-muted-foreground">{{ state.allBrightness }}</span>
+                                </div>
+                            </mock-option>
+                        </section>
+                    </mock-variant>
+
+                    <!-- Variante B: lista lateral -->
+                    <mock-variant name="B">
+                        <aside class="border-b border-border bg-muted/60 p-3 @3xl:w-72 @3xl:shrink-0 @3xl:border-b-0 @3xl:border-r">
+                            <h2 class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Monitores</h2>
+                            <div class="flex gap-2 overflow-x-auto pb-1 @3xl:flex-col @3xl:overflow-visible">
+                                <div v-for="m in state.monitors" :key="m.key"
+                                     class="min-w-60 rounded-lg border bg-white @3xl:min-w-0"
+                                     :class="m.key === state.selected ? 'border-primary ring-2 ring-primary/30' : 'border-border'">
+                                    <button type="button" class="flex w-full items-center gap-3 p-3 text-left" @click="select(m.key)">
+                                        <monitor-badge :number="m.number" :active="m.key === state.selected"></monitor-badge>
+                                        <span class="min-w-0 flex-1">
+                                            <span class="block truncate text-sm font-semibold">{{ m.label || m.model }}</span>
+                                            <span class="block truncate text-xs text-muted-foreground">S/N {{ m.serial }}</span>
+                                            <span class="mt-1 flex flex-wrap gap-1">
+                                                <span v-if="m.primary" class="rounded bg-accent px-1.5 text-[11px] text-foreground">principal</span>
+                                                <span v-if="twinOf(m)" class="rounded bg-amber-100 px-1.5 text-[11px] text-amber-800">igual ao ecrã {{ twinOf(m).number }}</span>
+                                                <span v-if="!m.ddc" class="rounded bg-red-50 px-1.5 text-[11px] text-red-700">sem DDC/CI</span>
+                                            </span>
+                                        </span>
+                                    </button>
+                                    <div v-if="m.key !== state.selected && current.ddc && m.ddc" class="border-t border-border px-3 py-2">
+                                        <follow-switch :on="state.follow.includes(m.key)" :disabled="!m.ddc" :label="'Seguir o ecrã ' + current.number" @toggle="toggleFollow(m.key)"></follow-switch>
+                                    </div>
+                                </div>
+                            </div>
+                            <mock-option name="Brilho de todos">
+                                <div class="mt-3 rounded-lg border border-border bg-white p-3">
+                                    <div class="mb-2 flex items-center gap-2 text-sm font-medium"><mock-icon name="sun" :size="16" class="text-muted-foreground"></mock-icon>Brilho de todos</div>
+                                    <div class="flex items-center gap-3">
+                                        <input type="range" min="0" max="100" :value="state.allBrightness" class="h-2 flex-1 accent-primary" @input="setAll(Number($event.target.value))">
+                                        <span class="w-8 text-right text-sm tabular-nums text-muted-foreground">{{ state.allBrightness }}</span>
+                                    </div>
+                                </div>
+                            </mock-option>
+                        </aside>
+                    </mock-variant>
+
+                    <!-- Painel do monitor (igual nas duas variantes) -->
+                    <section class="flex min-w-0 flex-1 flex-col gap-4 p-4 @3xl:p-6">
+                        <div class="flex items-start gap-4">
+                            <monitor-badge :number="current.number" active size="lg"></monitor-badge>
+                            <div class="min-w-0 flex-1">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <template v-if="state.renaming">
+                                        <input v-model="state.nameDraft" class="min-w-0 rounded-md border border-border px-2 py-1 text-lg font-semibold" @keydown.enter="saveName">
+                                        <button type="button" class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground" @click="saveName">Guardar</button>
+                                    </template>
+                                    <template v-else>
+                                        <h2 class="truncate text-xl font-semibold">{{ current.label || current.model }}</h2>
+                                        <button type="button" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted" @click="startRename">
+                                            <mock-icon name="pencil" :size="13"></mock-icon>Nome
+                                        </button>
+                                    </template>
+                                </div>
+                                <p class="text-sm text-muted-foreground">Ecrã {{ current.number }} do Windows · S/N {{ current.serial }} · {{ current.res }} · {{ current.hz }} Hz</p>
+                                <button type="button" class="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary" @click="state.details = !state.details">
+                                    <mock-icon :name="state.details ? 'chevron-up' : 'chevron-down'" :size="14"></mock-icon>
+                                    {{ state.details ? 'Esconder detalhes' : 'Detalhes técnicos' }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <dl v-if="state.details" class="grid grid-cols-1 gap-x-6 gap-y-1.5 rounded-lg border border-border p-4 text-sm @xl:grid-cols-[auto_1fr]">
+                            <dt class="text-muted-foreground">Modelo</dt><dd>{{ current.model }}</dd>
+                            <dt class="text-muted-foreground">Fabricante</dt><dd>{{ current.maker }}</dd>
+                            <dt class="text-muted-foreground">Nome no Windows</dt><dd>\\.\DISPLAY{{ current.number }}</dd>
+                            <dt class="text-muted-foreground">ID único</dt><dd class="break-all font-mono text-xs leading-5">{{ current.instance }}</dd>
+                            <dt class="text-muted-foreground">Posição</dt><dd>{{ current.x }}, {{ current.y }}</dd>
+                            <dt class="text-muted-foreground">Ano de fabrico</dt><dd>{{ current.year }}</dd>
+                            <dt class="text-muted-foreground">DDC/CI</dt><dd>{{ current.ddc ? 'disponível' : 'indisponível' }}</dd>
+                        </dl>
+
+                        <div v-if="twinOf(current)" class="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                            <mock-icon name="copy" :size="16" class="mt-0.5 shrink-0"></mock-icon>
+                            <span>O ecrã {{ twinOf(current).number }} é do mesmo modelo. As alterações aqui vão só para este (S/N {{ current.serial }}), a não ser que o ligue em "Seguir".</span>
+                        </div>
+
+                        <!-- Destino das alterações -->
+                        <div v-if="current.ddc" class="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
+                             :class="state.flash ? 'border-primary bg-accent' : 'border-border'">
+                            <mock-icon name="send" :size="15" class="text-muted-foreground"></mock-icon>
+                            <span class="text-muted-foreground">As alterações vão para:</span>
+                            <monitor-badge :number="current.number" active size="sm"></monitor-badge>
+                            <template v-for="m in followers" :key="m.key">
+                                <span class="text-muted-foreground">+</span>
+                                <monitor-badge :number="m.number" size="sm"></monitor-badge>
+                            </template>
+                            <span v-if="!followers.length" class="text-xs text-muted-foreground">(só este ecrã)</span>
+                        </div>
+
+                        <!-- Atalhos sempre visíveis -->
+                        <div class="rounded-lg border border-border px-4">
+                            <template v-if="current.ddc">
+                                <setting-row label="Brilho" icon="sun" :value="current.v.brilho" @change="set('brilho', $event)"></setting-row>
+                                <div class="border-t border-border"></div>
+                                <setting-row label="Contraste" icon="contrast" :value="current.v.contraste" @change="set('contraste', $event)"></setting-row>
+                            </template>
+                            <div v-else class="flex items-start gap-3 py-4">
+                                <mock-icon name="plug-zap" :size="20" class="mt-0.5 shrink-0 text-red-600"></mock-icon>
+                                <div class="text-sm">
+                                    <p class="font-medium">Este ecrã não aceita controlo DDC/CI</p>
+                                    <p class="mt-1 text-muted-foreground">Ecrãs internos de portátil não usam DDC/CI: o brilho deste é controlado pelo Windows. Num monitor externo, ative "DDC/CI" no menu do próprio monitor e procure de novo.</p>
+                                    <button type="button" class="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm hover:bg-muted" @click="rescan">
+                                        <mock-icon name="refresh-cw" :size="14"></mock-icon>Procurar de novo
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <mock-option name="Perfis">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Perfis</span>
+                                <button v-for="p in state.profiles" :key="p.name" type="button" :disabled="!current.ddc"
+                                        class="inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-sm disabled:opacity-50"
+                                        :class="state.activeProfile === p.name ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-muted'"
+                                        @click="applyProfile(p)">
+                                    <mock-icon :name="p.icon" :size="14"></mock-icon>{{ p.name }}
+                                </button>
+                                <button type="button" :disabled="!current.ddc" class="inline-flex min-h-9 items-center gap-1 rounded-full border border-dashed border-border px-3 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50" @click="saveProfile">
+                                    <mock-icon name="plus" :size="14"></mock-icon>Guardar atual
+                                </button>
+                            </div>
+                        </mock-option>
+
+                        <!-- Secções -->
+                        <nav class="-mx-1 flex gap-1 overflow-x-auto border-b border-border px-1">
+                            <button v-for="s in sections" :key="s.id" type="button"
+                                    class="inline-flex min-h-10 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm font-medium"
+                                    :class="state.section === s.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+                                    @click="state.section = s.id">
+                                <mock-icon :name="s.icon" :size="15"></mock-icon>{{ s.label }}
+                            </button>
+                        </nav>
+
+                        <div v-if="state.section !== 'ecra' && !current.ddc" class="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                            Sem DDC/CI neste ecrã, por isso não há definições de {{ sectionLabel.toLowerCase() }}. A resolução e a rotação estão em "Ecrã".
+                        </div>
+
+                        <div v-else-if="state.section === 'imagem'" class="rounded-lg border border-border px-4">
+                            <setting-row label="Predefinição de cor" icon="palette" :value="current.v.preset" :choices="presets" @change="set('preset', $event)"></setting-row>
+                            <div class="border-t border-border"></div>
+                            <setting-row label="Modo de cenário" icon="clapperboard" :value="current.v.cenario" :choices="scenarios" @change="set('cenario', $event)"></setting-row>
+                            <div class="border-t border-border"></div>
+                            <setting-row label="Ganho vermelho" icon="circle" :value="current.v.r" @change="set('r', $event)"></setting-row>
+                            <setting-row label="Ganho verde" icon="circle" :value="current.v.g" @change="set('g', $event)"></setting-row>
+                            <setting-row label="Ganho azul" icon="circle" :value="current.v.b" @change="set('b', $event)"></setting-row>
+                            <div class="border-t border-border"></div>
+                            <setting-row label="Escala da imagem" icon="scaling" :value="current.v.escala" :choices="['Sem escala', 'Ecrã inteiro', 'Proporção original']" @change="set('escala', $event)"></setting-row>
+                        </div>
+
+                        <div v-else-if="state.section === 'jogo'" class="rounded-lg border border-border px-4">
+                            <setting-row label="Over Drive" icon="gauge" :value="current.v.overdrive" :choices="['Desligado', 'Normal', 'Rápido', 'Extremo']" @change="set('overdrive', $event)"></setting-row>
+                            <div class="border-t border-border"></div>
+                            <setting-row label="Modo de jogo" icon="gamepad-2" :value="current.v.jogo" :choices="['Desligado', 'FPS', 'RTS', 'Corrida']" @change="set('jogo', $event)"></setting-row>
+                            <div class="border-t border-border"></div>
+                            <setting-row label="Contraste dinâmico" icon="sun-moon" :value="current.v.dinamico" :choices="['Desligado', 'Ligado']" @change="set('dinamico', $event)"></setting-row>
+                            <div class="border-t border-border"></div>
+                            <setting-row label="HDR" icon="sparkles" :value="current.v.hdr" :choices="['Desligado', 'DisplayHDR 400', 'Jogo HDR']" @change="set('hdr', $event)"></setting-row>
+                        </div>
+
+                        <div v-else-if="state.section === 'entrada'" class="flex flex-col gap-4">
+                            <div class="rounded-lg border border-border px-4">
+                                <setting-row label="Fonte de entrada" icon="cable" :value="current.v.entrada" :choices="['HDMI 1', 'HDMI 2', 'DisplayPort', 'USB-C']" @change="set('entrada', $event)"></setting-row>
+                                <div class="border-t border-border"></div>
+                                <setting-row label="Energia" icon="power" :value="current.v.energia" :choices="['Ligado', 'Em espera', 'Desligado']" @change="set('energia', $event)"></setting-row>
+                            </div>
+                            <div class="flex flex-col gap-2 rounded-lg border border-border p-4 @xl:flex-row @xl:items-center @xl:justify-between">
+                                <div class="text-sm">
+                                    <p class="font-medium">Repor definições de fábrica</p>
+                                    <p class="text-muted-foreground">Só no ecrã {{ current.number }}.</p>
+                                </div>
+                                <button type="button" class="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-red-200 px-3 text-sm text-red-700 hover:bg-red-50" @click="state.confirmReset = true">
+                                    <mock-icon name="rotate-ccw" :size="14"></mock-icon>Repor de fábrica…
+                                </button>
+                            </div>
+                        </div>
+
+                        <div v-else-if="state.section === 'ecra'" class="flex flex-col gap-4 rounded-lg border border-border p-4">
+                            <div class="grid gap-4 @xl:grid-cols-2">
+                                <label class="flex flex-col gap-1 text-sm">
+                                    <span class="font-medium">Resolução</span>
+                                    <select v-model="state.pending.res" class="rounded-md border border-border bg-white px-3 py-2">
+                                        <option v-for="r in current.resList" :key="r">{{ r }}</option>
+                                    </select>
+                                </label>
+                                <label class="flex flex-col gap-1 text-sm">
+                                    <span class="font-medium">Frequência</span>
+                                    <select v-model="state.pending.hz" class="rounded-md border border-border bg-white px-3 py-2">
+                                        <option v-for="h in current.hzList" :key="h" :value="h">{{ h }} Hz</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="flex flex-col gap-1 text-sm">
+                                <span class="font-medium">Rotação</span>
+                                <div class="flex flex-wrap gap-2">
+                                    <button v-for="o in ['Paisagem', 'Retrato', 'Paisagem invertida', 'Retrato invertido']" :key="o" type="button"
+                                            class="min-h-9 rounded-md border px-3"
+                                            :class="state.pending.rot === o ? 'border-primary bg-accent' : 'border-border hover:bg-muted'"
+                                            @click="state.pending.rot = o">{{ o }}</button>
+                                </div>
+                            </div>
+                            <div class="flex justify-end">
+                                <button type="button" class="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-40"
+                                        :disabled="!displayChanged" @click="applyDisplay">
+                                    <mock-icon name="check" :size="15"></mock-icon>Aplicar ao ecrã {{ current.number }}
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <footer class="border-t border-border bg-muted/60 px-4 py-2 text-xs text-muted-foreground @3xl:px-6">
+                    {{ state.scanning ? 'A procurar monitores…' : state.monitors.length + ' monitores encontrados, cada um com o seu número do Windows e ID único.' }}
+                </footer>
+            </div>
+        </mock-frame>
+    </main>
+    <mock-modal v-model:open="state.confirmReset" title="Repor definições de fábrica?" confirm-text="Sim, repor" tone="destructive" @confirm="resetFactory">
+        Todas as definições de imagem, jogo e entrada do ecrã {{ current.number }} ({{ current.label || current.model }}, S/N {{ current.serial }}) voltam aos valores de fábrica. Os outros ecrãs não mudam.
+    </mock-modal>
+    <mock-modal v-model:open="state.keepOpen" title="Manter esta configuração?" confirm-text="Manter" @confirm="keepDisplay" @cancel="revertDisplay">
+        O ecrã {{ current.number }} está agora em {{ state.pending.res }} a {{ state.pending.hz }} Hz, {{ state.pending.rot.toLowerCase() }}. Se não confirmar, volta ao que estava.
+    </mock-modal>
+    <mock-toast></mock-toast>
+</div>
+<script type="module">
+import { createMock } from "./_kit/kit.js"
+import MonitorBadge from "./_kit/components/MonitorBadge.js"
+import DisplayMap from "./_kit/components/DisplayMap.js"
+import SettingRow from "./_kit/components/SettingRow.js"
+import FollowSwitch from "./_kit/components/FollowSwitch.js"
+
+const legionValues = (brilho) => ({
+    brilho, contraste: 75, preset: "sRGB", cenario: "Navegação web", r: 50, g: 50, b: 50, escala: "Ecrã inteiro",
+    overdrive: "Normal", jogo: "Desligado", dinamico: "Desligado", hdr: "Desligado", entrada: "DisplayPort", energia: "Ligado",
+})
+
+createMock({
+    variants: ["A", "B"],
+    options: {
+        A: [
+            { id: "Brilho de todos", where: "Topo > Os seus ecrãs > Brilho de todos" },
+            { id: "Perfis", default: false, where: "Painel do monitor > Perfis (por baixo do brilho)" },
+        ],
+        B: [
+            { id: "Brilho de todos", where: "Lista lateral > Fundo da lista" },
+            { id: "Perfis", default: false, where: "Painel do monitor > Perfis (por baixo do brilho)" },
+        ],
+    },
+    components: { MonitorBadge, DisplayMap, SettingRow, FollowSwitch },
+    state: () => ({
+        monitors: [
+            { key: "m1", number: 1, label: "", model: "Ecrã do portátil", maker: "BOE", serial: "—", year: 2023, primary: true, ddc: false,
+              instance: "DISPLAY\\BOE0B8B\\4&3fbe7b&0&UID8388688", x: 0, y: 160, w: 2560, h: 1600,
+              res: "2560 x 1600", hz: 240, rot: "Paisagem", resList: ["2560 x 1600", "1920 x 1200", "1280 x 800"], hzList: [240, 165, 60], v: {} },
+            { key: "m2", number: 2, label: "", model: "Legion Y27q-30", maker: "Lenovo", serial: "V30A1B2C", year: 2024, primary: false, ddc: true,
+              instance: "DISPLAY\\LEN66F9\\5&1a2b3c&0&UID4352", x: 2560, y: 0, w: 2560, h: 1440,
+              res: "2560 x 1440", hz: 180, rot: "Paisagem", resList: ["2560 x 1440", "1920 x 1080"], hzList: [180, 144, 60], v: legionValues(70) },
+            { key: "m3", number: 3, label: "", model: "Legion Y27q-30", maker: "Lenovo", serial: "V30A1B9F", year: 2024, primary: false, ddc: true,
+              instance: "DISPLAY\\LEN66F9\\5&1a2b3c&0&UID4353", x: 5120, y: 0, w: 2560, h: 1440,
+              res: "2560 x 1440", hz: 180, rot: "Paisagem", resList: ["2560 x 1440", "1920 x 1080"], hzList: [180, 144, 60], v: legionValues(55) },
+        ],
+        selected: "m2",
+        follow: ["m3"],
+        section: "imagem",
+        details: false,
+        renaming: false,
+        nameDraft: "",
+        allBrightness: 60,
+        scanning: false,
+        flash: false,
+        confirmReset: false,
+        keepOpen: false,
+        pending: { res: "2560 x 1440", hz: 180, rot: "Paisagem" },
+        previous: null,
+        activeProfile: null,
+        profiles: [
+            { name: "Trabalho", icon: "briefcase", v: { brilho: 60, contraste: 70, preset: "sRGB", overdrive: "Desligado" } },
+            { name: "Jogo", icon: "gamepad-2", v: { brilho: 90, contraste: 80, preset: "Nativo do ecrã", overdrive: "Rápido", jogo: "FPS" } },
+            { name: "Noite", icon: "moon", v: { brilho: 25, contraste: 60, preset: "Luz azul reduzida" } },
+        ],
+    }),
+    data: () => ({
+        sections: [
+            { id: "imagem", label: "Imagem", icon: "image" },
+            { id: "jogo", label: "Jogo", icon: "gamepad-2" },
+            { id: "entrada", label: "Entrada e energia", icon: "plug" },
+            { id: "ecra", label: "Ecrã", icon: "monitor" },
+        ],
+        presets: ["sRGB", "Nativo do ecrã", "Avermelhado (6500K)", "Neutro (7500K)", "Azulado (9300K)", "DCI-P3", "Adobe RGB", "Luz azul reduzida"],
+        scenarios: ["Nativo do painel", "Criação de imagem", "Cinema digital", "Navegação web", "Jogos", "Luz azul reduzida"],
+    }),
+    computed: {
+        mapList() { return this.state.monitors.map((m) => ({ ...m, name: m.label || m.model })) },
+        current() { return this.state.monitors.find((m) => m.key === this.state.selected) },
+        others() { return this.state.monitors.filter((m) => m.key !== this.state.selected) },
+        followers() { return this.state.monitors.filter((m) => m.key !== this.state.selected && m.ddc && this.state.follow.includes(m.key)) },
+        sectionLabel() { return this.sections.find((s) => s.id === this.state.section).label },
+        displayChanged() {
+            const p = this.state.pending, c = this.current
+            return p.res !== c.res || p.hz !== c.hz || p.rot !== c.rot
+        },
+    },
+    methods: {
+        twinOf(m) { return this.state.monitors.find((o) => o.key !== m.key && o.model === m.model && m.ddc) },
+        select(key) {
+            const s = this.state
+            s.selected = key
+            s.follow = s.follow.filter((k) => k !== key)
+            s.renaming = false
+            s.activeProfile = null
+            const c = this.current
+            s.pending = { res: c.res, hz: c.hz, rot: c.rot }
+        },
+        toggleFollow(key) {
+            const s = this.state, m = s.monitors.find((x) => x.key === key)
+            if (s.follow.includes(key)) {
+                s.follow = s.follow.filter((k) => k !== key)
+                this.toast(`O ecrã ${m.number} deixou de seguir o ecrã ${this.current.number}`)
+            } else {
+                s.follow.push(key)
+                this.toast(`O ecrã ${m.number} passa a receber as alterações do ecrã ${this.current.number}`)
+            }
+        },
+        set(field, value) {
+            const targets = [this.current, ...this.followers]
+            targets.forEach((m) => { m.v[field] = value })
+            this.state.activeProfile = null
+            this.pulse()
+            if (typeof value === "string") {
+                this.toast(`${value} aplicado ao ecrã ${targets.map((m) => m.number).join(" e ")}`)
+            }
+        },
+        setAll(value) {
+            this.state.allBrightness = value
+            this.state.monitors.filter((m) => m.ddc).forEach((m) => { m.v.brilho = value })
+        },
+        pulse() {
+            this.state.flash = true
+            clearTimeout(this._flashTimer)
+            this._flashTimer = setTimeout(() => { this.state.flash = false }, 500)
+        },
+        identify() {
+            this.toast("A mostrar o número em cada ecrã durante 2,5 s")
+        },
+        rescan() {
+            this.state.scanning = true
+            setTimeout(() => {
+                this.state.scanning = false
+                this.toast(`${this.state.monitors.length} monitores encontrados`)
+            }, 1200)
+        },
+        startRename() {
+            this.state.nameDraft = this.current.label || this.current.model
+            this.state.renaming = true
+        },
+        saveName() {
+            this.current.label = this.state.nameDraft.trim()
+            this.state.renaming = false
+            this.toast("Nome guardado")
+        },
+        resetFactory() {
+            Object.assign(this.current.v, legionValues(70))
+            this.toast(`Ecrã ${this.current.number} reposto de fábrica`)
+        },
+        applyDisplay() {
+            const c = this.current
+            this.state.previous = { res: c.res, hz: c.hz, rot: c.rot }
+            Object.assign(c, this.state.pending)
+            this.state.keepOpen = true
+        },
+        keepDisplay() {
+            this.state.previous = null
+            this.toast(`Configuração do ecrã ${this.current.number} guardada`)
+        },
+        revertDisplay() {
+            if (!this.state.previous) return
+            Object.assign(this.current, this.state.previous)
+            this.state.pending = { ...this.state.previous }
+            this.state.previous = null
+            this.toast("Configuração anterior reposta")
+        },
+        applyProfile(p) {
+            const targets = [this.current, ...this.followers]
+            targets.forEach((m) => Object.assign(m.v, p.v))
+            this.state.activeProfile = p.name
+            this.pulse()
+            this.toast(`Perfil ${p.name} aplicado ao ecrã ${targets.map((m) => m.number).join(" e ")}`)
+        },
+        saveProfile() {
+            const n = this.state.profiles.length + 1
+            this.state.profiles.push({ name: `Perfil ${n}`, icon: "bookmark", v: { ...this.current.v } })
+            this.toast(`Definições atuais do ecrã ${this.current.number} guardadas como "Perfil ${n}"`)
+        },
+    },
+})
+</script>
+</body>
+</html>

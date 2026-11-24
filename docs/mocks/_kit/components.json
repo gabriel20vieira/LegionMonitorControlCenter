@@ -1,0 +1,76 @@
+[
+    {
+        "name": "MonitorBadge",
+        "file": "components/MonitorBadge.js",
+        "description": "Número do Windows de um monitor num círculo",
+        "props": [
+            "number: Number",
+            "active: Boolean",
+            "size: String (sm|md|lg)"
+        ],
+        "emits": [],
+        "slots": [],
+        "example": "<monitor-badge :number=\"2\" active></monitor-badge>",
+        "usedBy": [
+            "revamp-layout.html"
+        ]
+    },
+    {
+        "name": "DisplayMap",
+        "file": "components/DisplayMap.js",
+        "description": "Disposição dos ecrãs à escala, clicável, com marca de seleção e de seguir",
+        "props": [
+            "monitors: Array [{key,number,name,x,y,w,h}]",
+            "selected: String",
+            "following: Array",
+            "height: Number"
+        ],
+        "emits": [
+            "select"
+        ],
+        "slots": [],
+        "example": "<display-map :monitors=\"list\" :selected=\"sel\" :following=\"follow\" @select=\"select\"></display-map>",
+        "usedBy": [
+            "revamp-layout.html"
+        ]
+    },
+    {
+        "name": "SettingRow",
+        "file": "components/SettingRow.js",
+        "description": "Linha de definição: deslizador 0-100 ou lista de valores",
+        "props": [
+            "label: String",
+            "icon: String",
+            "value: Number|String",
+            "choices: Array",
+            "max: Number",
+            "hint: String"
+        ],
+        "emits": [
+            "change"
+        ],
+        "slots": [],
+        "example": "<setting-row label=\"Brilho\" icon=\"sun\" :value=\"70\" @change=\"set\"></setting-row>",
+        "usedBy": [
+            "revamp-layout.html"
+        ]
+    },
+    {
+        "name": "FollowSwitch",
+        "file": "components/FollowSwitch.js",
+        "description": "Interruptor 'seguir alterações' de um monitor",
+        "props": [
+            "on: Boolean",
+            "disabled: Boolean",
+            "label: String"
+        ],
+        "emits": [
+            "toggle"
+        ],
+        "slots": [],
+        "example": "<follow-switch :on=\"true\" label=\"Seguir\" @toggle=\"toggle\"></follow-switch>",
+        "usedBy": [
+            "revamp-layout.html"
+        ]
+    }
+]
