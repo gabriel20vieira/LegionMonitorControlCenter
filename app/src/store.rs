@@ -6,11 +6,15 @@ use std::path::PathBuf;
 
 use crate::win::Placement;
 
-/// A named set of DDC/CI values (VCP code → value) the person can apply in one click.
+/// A named set of DDC/CI values (VCP code → value) plus which screens are on,
+/// applied in one click.
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
     pub values: BTreeMap<u8, u32>,
+    /// Screens on/off when the profile was saved (empty in profiles from 0.2.x).
+    #[serde(default)]
+    pub screens: Vec<LayoutScreen>,
 }
 
 /// One screen in a screen layout: on or off, and where it sits when on.
@@ -22,13 +26,6 @@ pub struct LayoutScreen {
     pub on: bool,
     #[serde(default)]
     pub place: Option<Placement>,
-}
-
-/// A named set of screens on/off, e.g. "Só o 7".
-#[derive(Clone, Default, Serialize, Deserialize)]
-pub struct Layout {
-    pub name: String,
-    pub screens: Vec<LayoutScreen>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -45,9 +42,6 @@ pub struct Store {
     /// saved profiles, shared by every monitor
     #[serde(default)]
     pub profiles: Vec<Profile>,
-    /// saved screen layouts (which screens are on)
-    #[serde(default)]
-    pub layouts: Vec<Layout>,
     /// unique key → where the screen was before it was turned off here
     #[serde(default)]
     pub placements: BTreeMap<String, Placement>,

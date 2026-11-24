@@ -128,9 +128,6 @@ const DM_DISPLAYFREQUENCY: u32 = 0x0040_0000;
 const CDS_UPDATEREGISTRY: u32 = 1;
 const CDS_NORESET: u32 = 0x1000_0000;
 const DM_POSITION: u32 = 0x0000_0020;
-const ENUM_REGISTRY_SETTINGS: u32 = 0xFFFF_FFFE;
-const DISPLAY_DEVICE_ATTACHED_TO_DESKTOP: u32 = 0x1;
-const DISPLAY_DEVICE_MIRRORING_DRIVER: u32 = 0x8;
 
 pub fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -358,55 +355,6 @@ pub fn enumerate() -> Vec<(MonitorDesc, Option<HANDLE>)> {
     out
 }
 
-/// Monitors that are plugged in but whose output is not on the desktop.
-fn detached() -> Vec<MonitorDesc> {
-    let mut out = Vec::new();
-    for i in 0..64u32 {
-        let mut dd: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
-        dd.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as u32;
-        if unsafe { EnumDisplayDevicesW(std::ptr::null(), i, &mut dd, 0) } == 0 {
-            break;
-        }
-        if dd.StateFlags & (DISPLAY_DEVICE_ATTACHED_TO_DESKTOP | DISPLAY_DEVICE_MIRRORING_DRIVER) != 0 {
-            continue;
-        }
-        let gdi = from_wide(&dd.DeviceName);
-        for (j, dev) in monitor_devices(&gdi).into_iter().enumerate() {
-            let mut desc = MonitorDesc {
-                gdi_name: gdi.clone(),
-                win_number: display_number(&gdi),
-                sub_index: j,
-                off: true,
-                ..Default::default()
-            };
-            if let Some((path, hw, short)) = parse_interface(&dev.iface) {
-                desc.instance_path = path;
-                desc.hardware_id = hw;
-                desc.instance_short = short;
-            }
-            desc.key = if dev.iface.is_empty() { format!("{}#{}", gdi, j) } else { dev.iface.to_uppercase() };
-            // A laptop panel that is off is listed under every output of its GPU: keep the first.
-            if out.iter().any(|o: &MonitorDesc| o.key == desc.key) {
-                continue;
-            }
-            if let Some(e) = read_edid(&desc.instance_path).as_deref().and_then(crate::edid::parse) {
-                desc.manufacturer = e.manufacturer;
-                desc.product = e.product;
-                desc.serial_number = e.serial_number;
-                desc.serial_text = e.serial_text.unwrap_or_default();
-                desc.year = e.year;
-                if let Some(nm) = e.name {
-                    desc.name = nm;
-                }
-            }
-            if desc.name.is_empty() {
-                desc.name = if dev.description.is_empty() { "Monitor".into() } else { dev.description };
-            }
-            out.push(desc);
-        }
-    }
-    out
-}
 
 pub fn destroy_handle(h: HANDLE) {
     unsafe {
@@ -540,6 +488,203 @@ pub fn apply_orientation(gdi: &str, orientation: u32) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------- turning screens on and off
+//
+// Uses the CCD API (QueryDisplayConfig / SetDisplayConfig). Once a monitor is off, Windows no
+// longer ties it to a \\.\DISPLAYn output (every free output lists every off monitor), so the
+// old per-output API cannot tell which monitor to light up. CCD paths name the physical
+// monitor by its device path, the same unique key the rest of the app uses.
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+struct LUID {
+    low: u32,
+    high: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct PathSource {
+    adapter: LUID,
+    id: u32,
+    mode_idx: u32,
+    status: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct PathTarget {
+    adapter: LUID,
+    id: u32,
+    mode_idx: u32,
+    technology: u32,
+    rotation: u32,
+    scaling: u32,
+    refresh_num: u32,
+    refresh_den: u32,
+    scanline: u32,
+    available: BOOL,
+    status: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct PathInfo {
+    source: PathSource,
+    target: PathTarget,
+    flags: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct CcdMode {
+    info_type: u32,
+    id: u32,
+    adapter: LUID,
+    data: [u64; 6],
+}
+
+#[repr(C)]
+struct DevInfoHeader {
+    ty: u32,
+    size: u32,
+    adapter: LUID,
+    id: u32,
+}
+
+#[repr(C)]
+struct TargetName {
+    header: DevInfoHeader,
+    flags: u32,
+    technology: u32,
+    edid_manufacturer: u16,
+    edid_product: u16,
+    connector: u32,
+    friendly: [u16; 64],
+    path: [u16; 128],
+}
+
+#[repr(C)]
+struct SourceName {
+    header: DevInfoHeader,
+    gdi: [u16; 32],
+}
+
+#[link(name = "user32")]
+extern "system" {
+    fn GetDisplayConfigBufferSizes(flags: u32, paths: *mut u32, modes: *mut u32) -> i32;
+    fn QueryDisplayConfig(flags: u32, np: *mut u32, paths: *mut PathInfo, nm: *mut u32, modes: *mut CcdMode, topology: *mut u32) -> i32;
+    fn SetDisplayConfig(np: u32, paths: *const PathInfo, nm: u32, modes: *const CcdMode, flags: u32) -> i32;
+    fn DisplayConfigGetDeviceInfo(header: *mut DevInfoHeader) -> i32;
+}
+
+const QDC_ALL_PATHS: u32 = 0x1;
+const SDC_APPLY: u32 = 0x80;
+const SDC_USE_SUPPLIED_DISPLAY_CONFIG: u32 = 0x20;
+const SDC_SAVE_TO_DATABASE: u32 = 0x200;
+const SDC_ALLOW_CHANGES: u32 = 0x400;
+const PATH_ACTIVE: u32 = 0x1;
+const MODE_IDX_INVALID: u32 = 0xFFFF_FFFF;
+const ERROR_INSUFFICIENT_BUFFER: i32 = 122;
+
+fn query(flags: u32) -> Result<(Vec<PathInfo>, Vec<CcdMode>), String> {
+    for _ in 0..5 {
+        let (mut np, mut nm) = (0u32, 0u32);
+        let r = unsafe { GetDisplayConfigBufferSizes(flags, &mut np, &mut nm) };
+        if r != 0 {
+            return Err(format!("GetDisplayConfigBufferSizes falhou ({r})."));
+        }
+        let mut paths = vec![PathInfo::default(); np as usize];
+        let mut modes = vec![CcdMode::default(); nm as usize];
+        let r = unsafe { QueryDisplayConfig(flags, &mut np, paths.as_mut_ptr(), &mut nm, modes.as_mut_ptr(), std::ptr::null_mut()) };
+        if r == ERROR_INSUFFICIENT_BUFFER {
+            continue; // a screen came or went between the two calls
+        }
+        if r != 0 {
+            return Err(format!("QueryDisplayConfig falhou ({r})."));
+        }
+        paths.truncate(np as usize);
+        modes.truncate(nm as usize);
+        return Ok((paths, modes));
+    }
+    Err("A configuração de ecrãs mudou enquanto era lida.".into())
+}
+
+/// Device path of the monitor on a target, uppercased like `MonitorDesc::key`, plus its friendly name.
+fn target_name(adapter: LUID, id: u32) -> (String, String) {
+    let mut t: TargetName = unsafe { std::mem::zeroed() };
+    t.header = DevInfoHeader { ty: 2, size: std::mem::size_of::<TargetName>() as u32, adapter, id };
+    if unsafe { DisplayConfigGetDeviceInfo(&mut t.header) } != 0 {
+        return (String::new(), String::new());
+    }
+    (from_wide(&t.path).to_uppercase(), from_wide(&t.friendly))
+}
+
+/// `\\.\DISPLAYn` of a source.
+fn source_gdi(adapter: LUID, id: u32) -> String {
+    let mut s: SourceName = unsafe { std::mem::zeroed() };
+    s.header = DevInfoHeader { ty: 1, size: std::mem::size_of::<SourceName>() as u32, adapter, id };
+    if unsafe { DisplayConfigGetDeviceInfo(&mut s.header) } != 0 {
+        return String::new();
+    }
+    from_wide(&s.gdi)
+}
+
+/// Monitors that are plugged in but not on the desktop. The `\\.\DISPLAYn` given to each is
+/// a free output it could use; Windows only fixes the real one when the monitor is turned on.
+fn detached() -> Vec<MonitorDesc> {
+    let Ok((paths, _)) = query(QDC_ALL_PATHS) else { return Vec::new() };
+    let active = |p: &PathInfo| p.flags & PATH_ACTIVE != 0;
+    let on_targets: std::collections::HashSet<(LUID, u32)> =
+        paths.iter().filter(|p| active(p)).map(|p| (p.target.adapter, p.target.id)).collect();
+    let on_sources: std::collections::HashSet<(LUID, u32)> =
+        paths.iter().filter(|p| active(p)).map(|p| (p.source.adapter, p.source.id)).collect();
+    let mut out: Vec<MonitorDesc> = Vec::new();
+    let mut used_gdi = std::collections::HashSet::new();
+    for p in &paths {
+        let target = (p.target.adapter, p.target.id);
+        if active(p) || p.target.available == 0 || on_targets.contains(&target) {
+            continue;
+        }
+        let (key, friendly) = target_name(p.target.adapter, p.target.id);
+        if key.is_empty() || out.iter().any(|d| d.key == key) {
+            continue;
+        }
+        let gdi = paths
+            .iter()
+            .filter(|q| (q.target.adapter, q.target.id) == target && !on_sources.contains(&(q.source.adapter, q.source.id)))
+            .map(|q| source_gdi(q.source.adapter, q.source.id))
+            .find(|g| !g.is_empty() && !used_gdi.contains(g))
+            .unwrap_or_default();
+        used_gdi.insert(gdi.clone());
+        let mut desc = MonitorDesc {
+            win_number: display_number(&gdi),
+            gdi_name: gdi,
+            off: true,
+            key,
+            ..Default::default()
+        };
+        if let Some((path, hw, short)) = parse_interface(&desc.key) {
+            desc.instance_path = path;
+            desc.hardware_id = hw;
+            desc.instance_short = short;
+        }
+        if let Some(e) = read_edid(&desc.instance_path).as_deref().and_then(crate::edid::parse) {
+            desc.manufacturer = e.manufacturer;
+            desc.product = e.product;
+            desc.serial_number = e.serial_number;
+            desc.serial_text = e.serial_text.unwrap_or_default();
+            desc.year = e.year;
+            if let Some(nm) = e.name {
+                desc.name = nm;
+            }
+        }
+        if desc.name.is_empty() {
+            desc.name = if friendly.is_empty() { "Monitor".into() } else { friendly };
+        }
+        out.push(desc);
+    }
+    out
+}
 
 /// Where and how a screen sits on the desktop, kept so it can come back the same way.
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -565,48 +710,20 @@ pub fn placement(gdi: &str) -> Option<Placement> {
     })
 }
 
-/// Queues taking this output off the desktop. Nothing changes until `commit`.
-fn stage_off(gdi: &str) -> Result<(), String> {
+/// Queues moving an output that is on to `at`. Nothing changes until `commit`.
+fn stage_place(gdi: &str, at: Placement) -> Result<(), String> {
     let mut dm = zero_devmode();
-    dm.dmFields = DM_POSITION | DM_PELSWIDTH | DM_PELSHEIGHT;
-    let g = wide(gdi);
-    change_result(unsafe { ChangeDisplaySettingsExW(g.as_ptr(), &dm, 0, CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null()) })
-}
-
-/// Queues putting this output back on the desktop at `at`, or where Windows last had it,
-/// or to the right of `right_edge` at its largest mode.
-fn stage_on(gdi: &str, at: Option<Placement>, right_edge: i32) -> Result<(), String> {
-    let g = wide(gdi);
-    let mut dm = zero_devmode();
-    let place = at.filter(|p| p.width > 0).or_else(|| {
-        let mut reg = zero_devmode();
-        let ok = unsafe { EnumDisplaySettingsW(g.as_ptr(), ENUM_REGISTRY_SETTINGS, &mut reg) } != 0;
-        (ok && reg.dmPelsWidth > 0).then_some(Placement {
-            x: right_edge,
-            y: 0,
-            width: reg.dmPelsWidth,
-            height: reg.dmPelsHeight,
-            freq: reg.dmDisplayFrequency,
-            orientation: reg.dmDisplayOrientation,
-        })
-    });
-    let place = match place {
-        Some(p) => p,
-        None => {
-            let ((w, h), rates) = mode_info(gdi).modes.into_iter().next().ok_or("O Windows não devolveu modos para este ecrã.")?;
-            Placement { x: right_edge, y: 0, width: w, height: h, freq: rates.first().copied().unwrap_or(0), orientation: 0 }
-        }
-    };
-    dm.dmPositionX = place.x;
-    dm.dmPositionY = place.y;
-    dm.dmPelsWidth = place.width;
-    dm.dmPelsHeight = place.height;
-    dm.dmDisplayOrientation = place.orientation;
+    dm.dmPositionX = at.x;
+    dm.dmPositionY = at.y;
+    dm.dmPelsWidth = at.width;
+    dm.dmPelsHeight = at.height;
+    dm.dmDisplayOrientation = at.orientation;
     dm.dmFields = DM_POSITION | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYORIENTATION;
-    if place.freq > 1 {
-        dm.dmDisplayFrequency = place.freq;
+    if at.freq > 1 {
+        dm.dmDisplayFrequency = at.freq;
         dm.dmFields |= DM_DISPLAYFREQUENCY;
     }
+    let g = wide(gdi);
     change_result(unsafe { ChangeDisplaySettingsExW(g.as_ptr(), &dm, 0, CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null()) })
 }
 
@@ -615,36 +732,74 @@ fn commit() -> Result<(), String> {
     change_result(unsafe { ChangeDisplaySettingsExW(std::ptr::null(), std::ptr::null(), 0, 0, std::ptr::null()) })
 }
 
-/// One output to turn on (with where to put it) or off.
+/// One monitor (by unique key) to turn on, with where to put it, or off.
 pub enum Power {
     On(String, Option<Placement>),
     Off(String),
 }
 
-/// Turns several outputs on/off in one go. `right_edge` is where a screen with no known
-/// place goes. Returns the outputs that failed with the reason.
-pub fn set_power(changes: &[Power], right_edge: i32) -> Vec<(String, String)> {
+/// Turns several monitors on/off in one go. Returns the monitors (key, or "" for the whole
+/// change) that failed, with the reason.
+pub fn set_power(changes: &[Power]) -> Vec<(String, String)> {
+    let (paths, modes) = match query(QDC_ALL_PATHS) {
+        Ok(x) => x,
+        Err(e) => return vec![(String::new(), e)],
+    };
+    let key_of = |p: &PathInfo| target_name(p.target.adapter, p.target.id).0;
+    let off: std::collections::HashSet<&str> =
+        changes.iter().filter_map(|c| if let Power::Off(k) = c { Some(k.as_str()) } else { None }).collect();
+    let mut new: Vec<PathInfo> =
+        paths.iter().filter(|p| p.flags & PATH_ACTIVE != 0 && !off.contains(key_of(p).as_str())).copied().collect();
+    let mut used_sources: std::collections::HashSet<(LUID, u32)> = new.iter().map(|p| (p.source.adapter, p.source.id)).collect();
     let mut failed = Vec::new();
-    let mut edge = right_edge;
+    let mut place = Vec::new();
     for c in changes {
-        let (gdi, r) = match c {
-            Power::Off(g) => (g, stage_off(g)),
-            Power::On(g, at) => {
-                let r = stage_on(g, *at, edge);
-                if at.is_none() {
-                    if let Some(p) = mode_info(g).modes.first() {
-                        edge += p.0 .0 as i32;
-                    }
+        let Power::On(key, at) = c else { continue };
+        if new.iter().any(|p| &key_of(p) == key) {
+            continue;
+        }
+        let free = paths.iter().find(|p| {
+            p.flags & PATH_ACTIVE == 0
+                && p.target.available != 0
+                && !used_sources.contains(&(p.source.adapter, p.source.id))
+                && &key_of(p) == key
+        });
+        match free {
+            Some(p) => {
+                let mut q = *p;
+                q.flags |= PATH_ACTIVE;
+                q.source.mode_idx = MODE_IDX_INVALID;
+                q.target.mode_idx = MODE_IDX_INVALID;
+                used_sources.insert((q.source.adapter, q.source.id));
+                new.push(q);
+                if let Some(at) = at.filter(|a| a.width > 0) {
+                    place.push((q.source.adapter, q.source.id, at));
                 }
-                (g, r)
             }
-        };
-        if let Err(e) = r {
-            failed.push((gdi.clone(), e));
+            None => failed.push((key.clone(), "não há uma saída livre para este monitor".to_string())),
         }
     }
-    if let Err(e) = commit() {
-        failed.push((String::new(), e));
+    if new.is_empty() {
+        failed.push((String::new(), "tem de ficar pelo menos um ecrã ligado".into()));
+        return failed;
+    }
+    let flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_SAVE_TO_DATABASE;
+    let r = unsafe { SetDisplayConfig(new.len() as u32, new.as_ptr(), modes.len() as u32, modes.as_ptr(), flags) };
+    if r != 0 {
+        failed.push((String::new(), format!("o Windows recusou a configuração (código {r})")));
+        return failed;
+    }
+    // Put the screens that came back where they were.
+    if !place.is_empty() {
+        for (adapter, id, at) in place {
+            let gdi = source_gdi(adapter, id);
+            if let Err(e) = stage_place(&gdi, at) {
+                failed.push((String::new(), e));
+            }
+        }
+        if let Err(e) = commit() {
+            failed.push((String::new(), e));
+        }
     }
     failed
 }
@@ -662,22 +817,40 @@ mod tests {
         assert_eq!(std::mem::size_of::<DEVMODEW>(), 220);
     }
 
-    /// Real hardware: turns DISPLAY6 off and back on. Run with
-    /// `$env:MCC_POWER_TEST = "\\.\DISPLAY6"; cargo test -- --ignored power_roundtrip` (PowerShell).
+    #[test]
+    fn ccd_sizes() {
+        assert_eq!(std::mem::size_of::<PathInfo>(), 72);
+        assert_eq!(std::mem::size_of::<CcdMode>(), 64);
+        assert_eq!(std::mem::size_of::<TargetName>(), 420);
+        assert_eq!(std::mem::size_of::<SourceName>(), 84);
+    }
+
+    /// Real hardware: turns one monitor (by unique key) on then off again, or off then on.
+    /// PowerShell: `$env:MCC_POWER_TEST = "<key>"; cargo test -- --ignored power_roundtrip --nocapture`
     #[test]
     #[ignore]
     fn power_roundtrip() {
-        let gdi = std::env::var("MCC_POWER_TEST").expect("MCC_POWER_TEST");
-        let before = placement(&gdi).expect("screen is on");
-        let failed = set_power(&[Power::Off(gdi.clone())], 0);
+        let key = std::env::var("MCC_POWER_TEST").expect("MCC_POWER_TEST").to_uppercase();
+        let is_on = || enumerate().iter().any(|(d, _)| d.key == key && !d.off);
+        let gdi_of = || enumerate().into_iter().find(|(d, _)| d.key == key).map(|(d, _)| d.gdi_name);
+        let was_on = is_on();
+        println!("{key}: on={was_on} gdi={:?}", gdi_of());
+        let before = gdi_of().and_then(|g| placement(&g));
+        let first = if was_on { Power::Off(key.clone()) } else { Power::On(key.clone(), None) };
+        let failed = set_power(&[first]);
         assert!(failed.is_empty(), "{failed:?}");
         std::thread::sleep(std::time::Duration::from_secs(3));
-        assert!(placement(&gdi).is_none(), "still on");
-        assert!(detached().iter().any(|d| d.gdi_name == gdi), "not listed as off");
-        let failed = set_power(&[Power::On(gdi.clone(), Some(before))], 0);
+        assert_eq!(is_on(), !was_on, "first change did not hit this monitor");
+        println!("after first: gdi={:?} place={:?}", gdi_of(), gdi_of().and_then(|g| placement(&g)));
+        let back = if was_on { Power::On(key.clone(), before) } else { Power::Off(key.clone()) };
+        let failed = set_power(&[back]);
         assert!(failed.is_empty(), "{failed:?}");
         std::thread::sleep(std::time::Duration::from_secs(3));
-        assert_eq!(placement(&gdi), Some(before));
+        assert_eq!(is_on(), was_on, "second change did not hit this monitor");
+        if was_on {
+            assert_eq!(gdi_of().and_then(|g| placement(&g)), before);
+        }
     }
 }
+
 

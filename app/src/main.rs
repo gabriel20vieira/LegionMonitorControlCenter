@@ -80,8 +80,6 @@ struct App {
     all_brightness: Option<u32>,
     profile_edit: Option<String>,
     active_profile: Option<String>,
-    layout_edit: Option<String>,
-    active_layout: Option<String>,
     /// Next scan result should not overwrite the status line.
     keep_status: bool,
     scanned_once: bool,
@@ -129,8 +127,6 @@ impl App {
             all_brightness: None,
             profile_edit: None,
             active_profile: None,
-            layout_edit: None,
-            active_layout: None,
             keep_status: false,
             scanned_once: false,
             keep: None,
@@ -519,7 +515,6 @@ impl App {
             self.display_map(ui);
             ui.add_space(12.0);
             self.power_row(ui);
-            self.layouts_row(ui);
             ui.add_space(6.0);
             self.follow_row(ui);
             self.all_brightness_row(ui);
@@ -666,105 +661,43 @@ impl App {
         });
         if let Some(t) = toggled {
             self.set_screens(vec![t], &HashMap::new());
-            self.active_layout = None;
+            self.active_profile = None;
         }
     }
 
-    /// Screen layouts: which screens are on, saved under a name.
-    fn layouts_row(&mut self, ui: &mut egui::Ui) {
-        if self.monitors.iter().filter(|m| m.sub_index == 0).count() < 2 {
-            return;
-        }
-        let mut apply = None;
-        let mut delete = None;
-        let mut save = None;
-        ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Perfis de ecrãs:").color(MUTED));
-            for (i, l) in self.store.layouts.iter().enumerate() {
-                let on: Vec<String> = l.screens.iter().filter(|s| s.on).map(|s| self.screen_number(s).to_string()).collect();
-                let r = ui
-                    .add(egui::SelectableLabel::new(self.active_layout.as_deref() == Some(l.name.as_str()), &l.name))
-                    .on_hover_text(format!("Ligados: {}\nClique para aplicar · botão direito para apagar", on.join(", ")));
-                if r.clicked() {
-                    apply = Some(i);
-                }
-                r.context_menu(|ui| {
-                    if ui.button("Apagar perfil").clicked() {
-                        delete = Some(i);
-                        ui.close_menu();
-                    }
-                });
-            }
-            match &mut self.layout_edit {
-                Some(name) => {
-                    let r = ui.add(egui::TextEdit::singleline(name).desired_width(160.0));
-                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if ui.button("Guardar").clicked() || enter {
-                        save = Some(name.trim().to_string());
-                    }
-                    if ui.button("Cancelar").clicked() {
-                        self.layout_edit = None;
-                    }
-                }
-                None => {
-                    if ui.button("★ Guardar ecrãs").on_hover_text("Guarda que ecrãs estão ligados e onde estão").clicked() {
-                        self.layout_edit = Some(format!("Ecrãs {}", self.store.layouts.len() + 1));
-                    }
-                }
-            }
-        });
-        if let Some(i) = apply {
-            let l = self.store.layouts[i].clone();
-            let mut want = Vec::new();
-            let mut places = HashMap::new();
-            for s in &l.screens {
-                let m = self
-                    .monitors
-                    .iter()
-                    .find(|m| m.sub_index == 0 && m.key == s.key)
-                    .or_else(|| self.monitors.iter().find(|m| m.sub_index == 0 && m.gdi_name == s.gdi));
-                if let Some(m) = m {
-                    want.push((m.key.clone(), s.on));
-                    if let Some(p) = s.place {
-                        places.insert(m.key.clone(), p);
-                    }
-                }
-            }
-            if self.set_screens(want, &places) {
-                self.status = format!("Perfil de ecrãs {} aplicado.", l.name);
-            }
-            self.active_layout = Some(l.name);
-        }
-        if let Some(i) = delete {
-            let l = self.store.layouts.remove(i);
-            if self.active_layout.as_deref() == Some(l.name.as_str()) {
-                self.active_layout = None;
-            }
-            self.store.save();
-            self.status = format!("Perfil de ecrãs {} apagado.", l.name);
-            self.status_bad = false;
-        }
-        if let Some(name) = save.filter(|n| !n.is_empty()) {
-            let screens: Vec<store::LayoutScreen> = self
+    /// Which screens are on now, and where, for saving in a profile.
+    fn current_screens(&self) -> Vec<store::LayoutScreen> {
+        self.monitors
+            .iter()
+            .filter(|m| m.sub_index == 0)
+            .map(|m| store::LayoutScreen {
+                key: m.key.clone(),
+                gdi: m.gdi_name.clone(),
+                on: !m.off,
+                place: if m.off { self.store.placements.get(&m.key).copied() } else { win::placement(&m.gdi_name) },
+            })
+            .collect()
+    }
+
+    /// Turns screens on/off as saved in a profile. Returns true when nothing failed.
+    fn apply_screens(&mut self, screens: &[store::LayoutScreen]) -> bool {
+        let mut want = Vec::new();
+        let mut places = HashMap::new();
+        for s in screens {
+            let m = self
                 .monitors
                 .iter()
-                .filter(|m| m.sub_index == 0)
-                .map(|m| store::LayoutScreen {
-                    key: m.key.clone(),
-                    gdi: m.gdi_name.clone(),
-                    on: !m.off,
-                    place: if m.off { self.store.placements.get(&m.key).copied() } else { win::placement(&m.gdi_name) },
-                })
-                .collect();
-            let on: Vec<String> = screens.iter().filter(|s| s.on).map(|s| self.screen_number(s).to_string()).collect();
-            self.store.layouts.retain(|l| l.name != name);
-            self.store.layouts.push(store::Layout { name: name.clone(), screens });
-            self.store.save();
-            self.active_layout = Some(name.clone());
-            self.status = format!("Perfil de ecrãs {name} guardado (ligados: {}).", on.join(", "));
-            self.status_bad = false;
-            self.layout_edit = None;
+                .find(|m| m.sub_index == 0 && m.key == s.key)
+                .or_else(|| self.monitors.iter().find(|m| m.sub_index == 0 && m.gdi_name == s.gdi));
+            if let Some(m) = m {
+                want.push((m.key.clone(), s.on));
+                if let Some(p) = s.place {
+                    places.insert(m.key.clone(), p);
+                }
+            }
         }
+        let already = want.iter().all(|(k, on)| self.monitor(k).is_some_and(|m| m.off != *on));
+        already || self.set_screens(want, &places)
     }
 
     fn screen_number(&self, s: &store::LayoutScreen) -> u32 {
@@ -788,7 +721,7 @@ impl App {
             let Some(m) = self.monitor(key).cloned() else { continue };
             if *on && m.off {
                 let at = places.get(key).copied().or_else(|| self.store.placements.get(key).copied());
-                changes.push(win::Power::On(m.gdi_name.clone(), at));
+                changes.push(win::Power::On(key.clone(), at));
                 on_now.push(m.win_number.to_string());
             } else if !*on && !m.off {
                 if m.primary {
@@ -799,7 +732,7 @@ impl App {
                     self.store.placements.insert(key.clone(), p);
                 }
                 stay_on.remove(&m.gdi_name);
-                changes.push(win::Power::Off(m.gdi_name.clone()));
+                changes.push(win::Power::Off(key.clone()));
                 off_now.push(m.win_number.to_string());
             }
         }
@@ -814,14 +747,7 @@ impl App {
             return skipped.is_empty();
         }
         self.store.save();
-        let right_edge = self
-            .monitors
-            .iter()
-            .filter(|m| !m.off && stay_on.contains(&m.gdi_name))
-            .map(|m| m.rect.right)
-            .max()
-            .unwrap_or(0);
-        let failed = win::set_power(&changes, right_edge);
+        let failed = win::set_power(&changes);
         let mut parts = Vec::new();
         if !off_now.is_empty() {
             parts.push(format!("desligado(s): ecrã {}", off_now.join(", ")));
@@ -839,7 +765,7 @@ impl App {
         } else {
             let why: Vec<String> = failed
                 .iter()
-                .map(|(g, e)| match self.monitors.iter().find(|m| &m.gdi_name == g) {
+                .map(|(k, e)| match self.monitor(k) {
                     Some(m) => format!("ecrã {}: {e}", m.win_number),
                     None => e.clone(),
                 })
@@ -1091,9 +1017,15 @@ impl App {
             section_title(ui, "PERFIS");
             ui.add_space(4.0);
             for (i, p) in self.store.profiles.iter().enumerate() {
+                let on: Vec<String> = p.screens.iter().filter(|s| s.on).map(|s| self.screen_number(s).to_string()).collect();
+                let hint = if on.is_empty() {
+                    "Clique para aplicar · botão direito para apagar".to_string()
+                } else {
+                    format!("Ecrãs ligados: {}\nClique para aplicar · botão direito para apagar", on.join(", "))
+                };
                 let r = ui
                     .add(egui::SelectableLabel::new(self.active_profile.as_deref() == Some(p.name.as_str()), &p.name))
-                    .on_hover_text("Clique para aplicar · botão direito para apagar");
+                    .on_hover_text(hint);
                 if r.clicked() {
                     apply = Some(i);
                 }
@@ -1116,7 +1048,11 @@ impl App {
                     }
                 }
                 None => {
-                    if ui.button("★ Guardar atual").on_hover_text("Guarda as definições de imagem e jogo deste ecrã").clicked() {
+                    if ui
+                        .button("★ Guardar atual")
+                        .on_hover_text("Guarda que ecrãs estão ligados e as definições de imagem e jogo deste ecrã")
+                        .clicked()
+                    {
                         self.profile_edit = Some(format!("Perfil {}", self.store.profiles.len() + 1));
                     }
                 }
@@ -1124,14 +1060,28 @@ impl App {
         });
         if let Some(i) = apply {
             let p = self.store.profiles[i].clone();
+            let screens_ok = self.apply_screens(&p.screens);
+            let screens_status = (self.status.clone(), self.status_bad);
             for (code, value) in &p.values {
                 self.set_vcp(*code, *value);
             }
             self.active_profile = Some(p.name.clone());
             let mut n = vec![m.win_number.to_string()];
             n.extend(self.monitors.iter().filter(|o| o.key != m.key && o.ddc && self.store.sync.contains(&o.key)).map(|o| o.win_number.to_string()));
-            self.status = format!("Perfil {} aplicado ao ecrã {}.", p.name, n.join(" e "));
-            self.status_bad = false;
+            let on: Vec<String> = p.screens.iter().filter(|s| s.on).map(|s| self.screen_number(s).to_string()).collect();
+            if !screens_ok {
+                (self.status, self.status_bad) = screens_status;
+            } else {
+                let mut t = format!("Perfil {} aplicado", p.name);
+                if !on.is_empty() {
+                    t += &format!(": ecrãs ligados {}", on.join(", "));
+                }
+                if !p.values.is_empty() {
+                    t += &format!("; imagem no ecrã {}", n.join(" e "));
+                }
+                self.status = t + ".";
+                self.status_bad = false;
+            }
         }
         if let Some(i) = delete {
             let p = self.store.profiles.remove(i);
@@ -1152,15 +1102,17 @@ impl App {
                     Some((f.code, cur))
                 })
                 .collect();
-            if values.is_empty() {
+            let screens = self.current_screens();
+            if values.is_empty() && screens.len() < 2 {
                 self.status = "Ainda não há valores lidos deste ecrã para guardar.".into();
                 self.status_bad = true;
             } else {
+                let on: Vec<String> = screens.iter().filter(|s| s.on).map(|s| self.screen_number(s).to_string()).collect();
                 self.store.profiles.retain(|p| p.name != name);
-                self.store.profiles.push(store::Profile { name: name.clone(), values });
+                self.store.profiles.push(store::Profile { name: name.clone(), values, screens });
                 self.store.save();
                 self.active_profile = Some(name.clone());
-                self.status = format!("Definições do ecrã {} guardadas no perfil {name}.", m.win_number);
+                self.status = format!("Perfil {name} guardado: ecrãs ligados {} e definições do ecrã {}.", on.join(", "), m.win_number);
                 self.status_bad = false;
             }
             self.profile_edit = None;
